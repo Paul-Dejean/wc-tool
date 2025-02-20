@@ -16,6 +16,9 @@ pub struct Args {
     #[arg(short = 'w')]
     words: bool,
 
+    #[arg(short = 'm')]
+    chars: bool,
+
     file_paths: Vec<String>,
 }
 
@@ -27,15 +30,17 @@ pub fn execute_command(args: Args) -> i32 {
         return 1;
     }
 
-    let flags = vec![args.bytes, args.lines, args.words];
+    let flags = vec![args.bytes, args.lines, args.words, args.chars];
     let count = flags.into_iter().filter(|&flag| flag).count();
     if count > 1 {
-        print_error("Only one of -c (bytes) or -l (lines) or -w (words) can be provided.");
+        print_error(
+            "Only one of -c (bytes) or -l (lines) or -w (words) or -m (chars) can be provided.",
+        );
         std::process::exit(1);
     }
     if count == 0 {
         print_error(
-            "No flag provided. Please provide either -c (bytes) or -l (lines) or -w (words).",
+            "No flag provided. Please provide either -c (bytes) or -l (lines) or -w (words) or -m (chars).",
         );
         std::process::exit(1);
     }
@@ -71,6 +76,10 @@ pub fn execute_command(args: Args) -> i32 {
             let words = file_content.split_whitespace().count();
             total += words;
             println!("{:>8} {}", words, path);
+        } else if args.chars {
+            let chars = file_content.chars().count();
+            total += chars;
+            println!("{:>8} {}", chars, path);
         }
     }
     if file_paths.len() > 1 {

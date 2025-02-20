@@ -28,7 +28,7 @@ fn test_no_flag_argument() {
         .assert()
         .code(1)
         .stderr(predicate::str::contains(
-            "cwc: No flag provided. Please provide either -c (bytes) or -l (lines) or -w (words).",
+            "cwc: No flag provided. Please provide either -c (bytes) or -l (lines) or -w (words) or -m (chars).",
         ));
 }
 #[test]
@@ -39,7 +39,7 @@ fn test_multiple_flags_argument() {
         .assert()
         .code(1)
         .stderr(predicate::str::contains(
-            "cwc: Only one of -c (bytes) or -l (lines) or -w (words) can be provided",
+            "cwc: Only one of -c (bytes) or -l (lines) or -w (words) or -m (chars) can be provided",
         ));
 }
 
@@ -177,6 +177,49 @@ fn test_count_words_two_files() {
             .and(predicate::str::contains(&format!("{:>8} {}", 43, "total"))),
     );
     cmd.arg("-w")
+        .args(&[file_path1, file_path2])
+        .assert()
+        .code(0)
+        .stdout(stdout_predicate);
+}
+
+#[test]
+fn test_count_chars_one_file() {
+    let file_content = "Comment ça va éléonore ?";
+    let mut cmd = Command::cargo_bin("cwc-tool").unwrap();
+    let file = create_temp_file(file_content);
+    let file_path = file.path().to_str().unwrap();
+
+    cmd.arg("-m")
+        .arg(file_path)
+        .assert()
+        .code(0)
+        .stdout(predicate::str::contains(&format!(
+            "{:>8} {}",
+            24, file_path
+        )));
+}
+
+#[test]
+fn test_count_chars_two_files() {
+    let file_content1 = "Comment ça va éléonore ?";
+    let file1 = create_temp_file(file_content1);
+    let file_path1 = file1.path().to_str().unwrap();
+
+    let file_content2 = "I have a dream!
+    I have a dream that one day on the red hills of Georgia,
+    the sons of former slaves and the sons of former slave owners
+    will be able to sit down together at the table of brotherhood.";
+    let file2 = create_temp_file(file_content2);
+    let file_path2 = file2.path().to_str().unwrap();
+
+    let mut cmd = Command::cargo_bin("cwc-tool").unwrap();
+
+    let stdout_predicate = predicate::str::contains(&format!("{:>8} {}", 24, file_path1)).and(
+        predicate::str::contains(&format!("{:>8} {}", 209, file_path2))
+            .and(predicate::str::contains(&format!("{:>8} {}", 233, "total"))),
+    );
+    cmd.arg("-m")
         .args(&[file_path1, file_path2])
         .assert()
         .code(0)

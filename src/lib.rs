@@ -7,31 +7,36 @@ use std::fs;
 #[command(version = "1.0")]
 #[command(about = "A copy of unix command line tool wc", long_about = None)]
 pub struct Args {
-    #[arg(short = 'c', group = "byte_count")]
-    pub bytes: bool,
+    #[arg(short = 'c')]
+    bytes: bool,
 
-    #[arg(short = 'l', group = "line_count")]
-    pub lines: bool,
+    #[arg(short = 'l')]
+    lines: bool,
 
-    pub file_paths: Vec<String>,
+    #[arg(short = 'w')]
+    words: bool,
+
+    file_paths: Vec<String>,
 }
 
 pub fn execute_command(args: Args) -> i32 {
-    // println!("args: {}", args.file_paths.join(" "));
+    println!("args: {}", args.file_paths.join(" "));
     let file_paths = args.file_paths;
     if file_paths.is_empty() {
         print_error("Missing files argument");
         return 1;
     }
 
-    let flags = vec![args.bytes, args.lines];
+    let flags = vec![args.bytes, args.lines, args.words];
     let count = flags.into_iter().filter(|&flag| flag).count();
     if count > 1 {
-        print_error("Only one of -c (bytes) or -l (lines) can be provided.");
+        print_error("Only one of -c (bytes) or -l (lines) or -w (words) can be provided.");
         std::process::exit(1);
     }
     if count == 0 {
-        print_error("No flag provided. Please provide either -c (bytes) or -l (lines).");
+        print_error(
+            "No flag provided. Please provide either -c (bytes) or -l (lines) or -w (words).",
+        );
         std::process::exit(1);
     }
 
@@ -62,6 +67,10 @@ pub fn execute_command(args: Args) -> i32 {
             let lines_number = file_content.matches("\n").count();
             total += lines_number;
             println!("{:>8} {}", lines_number, path);
+        } else if args.words {
+            let words = file_content.split_whitespace().count();
+            total += words;
+            println!("{:>8} {}", words, path);
         }
     }
     if file_paths.len() > 1 {

@@ -1,5 +1,10 @@
+mod errors;
+mod utils;
+
 use clap::Parser;
-use std::fs;
+use errors::ProcessFileError;
+use std::fmt;
+use utils::{is_file_path_valid, print_error, read_file};
 
 #[derive(Parser, Debug)]
 #[command(name = "cwc")]
@@ -7,7 +12,7 @@ use std::fs;
 #[command(version = "1.0")]
 #[command(about = "A copy of unix command line tool wc", long_about = None)]
 pub struct Args {
-    #[arg(short = 'c')]
+    #[arg(short = 'c', group = "byte_count")]
     bytes: bool,
 
     #[arg(short = 'l')]
@@ -16,87 +21,140 @@ pub struct Args {
     #[arg(short = 'w')]
     words: bool,
 
-    #[arg(short = 'm')]
+    #[arg(short = 'm', group = "byte_count")]
     chars: bool,
 
     file_paths: Vec<String>,
 }
 
-pub fn execute_command(args: Args) -> i32 {
-    println!("args: {}", args.file_paths.join(" "));
-    let file_paths = args.file_paths;
+pub fn execute_command(args: &mut Args) -> i32 {
+    let file_paths = &args.file_paths;
     if file_paths.is_empty() {
         print_error("Missing files argument");
         return 1;
     }
 
-    let flags = vec![args.bytes, args.lines, args.words, args.chars];
-    let count = flags.into_iter().filter(|&flag| flag).count();
-    if count > 1 {
-        print_error(
-            "Only one of -c (bytes) or -l (lines) or -w (words) or -m (chars) can be provided.",
-        );
-        std::process::exit(1);
-    }
-    if count == 0 {
-        print_error(
-            "No flag provided. Please provide either -c (bytes) or -l (lines) or -w (words) or -m (chars).",
-        );
-        std::process::exit(1);
+    if [args.bytes, args.chars, args.lines, args.words]
+        .iter()
+        .all(|&x| !x)
+    {
+        args.bytes = true;
+        args.lines = true;
+        args.words = true;
     }
 
     let mut error_code = 0;
-    let mut total = 0;
 
-    for path in file_paths.iter() {
-        if !is_file_path_valid(path) {
-            print_error(&format!("{}: open: No such file", path));
-            error_code = 1;
-            continue;
-        }
-        let file_content = match read_file(path) {
-            Ok(content) => content,
-            Err(e) => {
-                print_error(&format!("Error reading file: {}", e));
-                eprintln!("Error reading file: {}", e);
-                error_code = 1;
-                continue;
+    if file_paths.len() == 1 {
+        let result = process_file(&file_paths[0], &args);
+        match result {
+            Ok(r) => {
+                println!("{}", r);
+                return 0;
             }
-        };
+            Err(_) => {
+                error_code = 1;
+            }
+        }
+        return error_code;
+    }
 
-        if args.bytes {
-            let bytes = file_content.len();
-            total += bytes;
-            println!("{:>8} {}", bytes, path);
-        } else if args.lines {
-            let lines_number = file_content.matches("\n").count();
-            total += lines_number;
-            println!("{:>8} {}", lines_number, path);
-        } else if args.words {
-            let words = file_content.split_whitespace().count();
-            total += words;
-            println!("{:>8} {}", words, path);
-        } else if args.chars {
-            let chars = file_content.chars().count();
-            total += chars;
-            println!("{:>8} {}", chars, path);
+    let mut total_result = WcResult::new("total".to_string());
+    for path in file_paths.iter() {
+        let result = process_file(path, &args);
+        match result {
+            Ok(r) => {
+                println!("{}", r);
+                total_result.add(&r);
+            }
+            Err(_) => {
+                error_code = 1;
+            }
         }
     }
-    if file_paths.len() > 1 {
-        println!("{:>8} total", total);
-    }
+    println!("{}", total_result);
     return error_code;
 }
 
-fn is_file_path_valid(file_path: &str) -> bool {
-    let path = std::path::Path::new(file_path);
-    return path.exists() && path.is_file();
+#[derive(Debug)]
+struct WcResult {
+    label: String,
+    bytes: Option<usize>,
+    lines: Option<usize>,
+    words: Option<usize>,
+    chars: Option<usize>,
 }
 
-fn read_file(file_path: &str) -> std::io::Result<String> {
-    fs::read_to_string(file_path)
+impl WcResult {
+    fn new(label: String) -> WcResult {
+        WcResult {
+            label,
+            bytes: None,
+            lines: None,
+            words: None,
+            chars: None,
+        }
+    }
+
+    fn add(&mut self, other: &Self) {
+        if let Some(b) = other.bytes {
+            self.bytes = Some(b + self.bytes.unwrap_or(0));
+        }
+        if let Some(c) = other.chars {
+            self.chars = Some(c + self.chars.unwrap_or(0));
+        }
+        if let Some(w) = other.words {
+            self.words = Some(w + self.words.unwrap_or(0));
+        }
+        if let Some(l) = other.lines {
+            self.lines = Some(l + self.lines.unwrap_or(0));
+        }
+    }
 }
 
-fn print_error(error: &str) {
-    eprintln!("cwc: {}", error);
+impl fmt::Display for WcResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let fields = [self.lines, self.words, self.bytes, self.chars]
+            .iter()
+            .filter_map(|&x| x)
+            .map(|x| format!("{x:>7}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        write!(f, "{} {}", fields, self.label)
+    }
+}
+
+fn process_file(file_path: &str, args: &Args) -> Result<WcResult, ProcessFileError> {
+    if !is_file_path_valid(file_path) {
+        print_error(&format!("{}: open: No such file", file_path));
+        return Err(ProcessFileError::FileNotFound(file_path.to_string()));
+    }
+    let file_content = match read_file(file_path) {
+        Ok(content) => content,
+        Err(e) => {
+            print_error(&format!("Error reading file: {}", e));
+            return Err(ProcessFileError::IoError(e));
+        }
+    };
+    return Ok(process_content(file_path, &file_content, args));
+}
+
+fn process_content(file_path: &str, content: &str, args: &Args) -> WcResult {
+    let mut wc_result = WcResult::new(file_path.to_string());
+    if args.bytes {
+        wc_result.bytes = Some(content.len());
+    };
+
+    if args.lines {
+        wc_result.lines = Some(content.matches("\n").count());
+    };
+
+    if args.words {
+        wc_result.words = Some(content.split_whitespace().count());
+    }
+    if args.chars {
+        wc_result.chars = Some(content.chars().count());
+    }
+
+    return wc_result;
 }

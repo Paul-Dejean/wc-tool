@@ -245,3 +245,17 @@ fn test_no_flag_two_files() {
         .code(0)
         .stdout(stdout_predicate);
 }
+
+#[test]
+fn test_read_from_stdin() {
+    let input = "Hello, world!";
+    let mut cmd = Command::cargo_bin("cwc-tool").unwrap();
+
+    cmd.write_stdin(input)
+        .assert()
+        .code(0)
+        .stdout(predicate::str::contains(&format!(
+            "{:>7} {:>7} {:>7}",
+            0, 2, 13
+        )));
+}

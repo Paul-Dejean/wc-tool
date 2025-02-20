@@ -4,7 +4,7 @@ mod utils;
 use clap::Parser;
 use errors::ProcessFileError;
 use std::fmt;
-use utils::{is_file_path_valid, print_error, read_file};
+use utils::{is_file_path_valid, print_error, read_file, read_from_stdin};
 
 #[derive(Parser, Debug)]
 #[command(name = "cwc")]
@@ -29,10 +29,6 @@ pub struct Args {
 
 pub fn execute_command(args: &mut Args) -> i32 {
     let file_paths = &args.file_paths;
-    if file_paths.is_empty() {
-        print_error("Missing files argument");
-        return 1;
-    }
 
     if [args.bytes, args.chars, args.lines, args.words]
         .iter()
@@ -43,7 +39,20 @@ pub fn execute_command(args: &mut Args) -> i32 {
         args.words = true;
     }
 
-    let mut error_code = 0;
+    if file_paths.is_empty() {
+        let content = read_from_stdin();
+        match content {
+            Ok(c) => {
+                let wc_result = process_content("", &c, &args);
+                println!("{}", wc_result);
+                return 0;
+            }
+            Err(e) => {
+                print_error(&format!("Error reading from stdin: {}", e));
+                return 1;
+            }
+        }
+    }
 
     if file_paths.len() == 1 {
         let result = process_file(&file_paths[0], &args);
@@ -52,13 +61,11 @@ pub fn execute_command(args: &mut Args) -> i32 {
                 println!("{}", r);
                 return 0;
             }
-            Err(_) => {
-                error_code = 1;
-            }
+            Err(_) => return 1,
         }
-        return error_code;
     }
 
+    let mut error_code = 0;
     let mut total_result = WcResult::new("total".to_string());
     for path in file_paths.iter() {
         let result = process_file(path, &args);
